@@ -5,4 +5,4 @@ def test_create_hold(client):
     })
 
     assert response.status_code == 200
-    assert response.json()["status"] == "HOLD"
+    assert response.json()["status"] == "HELD"
