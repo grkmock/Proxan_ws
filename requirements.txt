@@ -1,0 +1,16 @@
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+SQLAlchemy==1.4.49
+psycopg2-binary==2.9.10
+alembic==1.11.1
+python-jose==3.3.0
+passlib[bcrypt]==1.7.4
+pydantic==1.10.12
+celery[redis]==5.3.1
+redis==4.6.0
+python-dotenv==1.0.0
+pytest==7.4.0
+httpx==0.28.1
+python-multipart==0.0.6
+pytest-asyncio==0.21.0
+PyPDF2==3.0.1
