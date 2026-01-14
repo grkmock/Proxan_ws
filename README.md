@@ -1,26 +1,52 @@
-# Proxan - Backend Developer Case Study
+# Proxan Backend Case Study
 
-<!-- Replace OWNER and REPO in the line below with your GitHub owner and repo to enable the badge -->
-[![CI](https://github.com/grkmock/Proxan_ws/actions/workflows/ci.yml/badge.svg)](https://github.com/grkmock/Proxan_ws/actions/workflows/ci.yml)
+This project implements a **two-phase reservation system (HOLD → CONFIRM)**  
+designed to handle concurrency, background jobs, and transactional integrity.
 
-Scaffold for the reservation system (HOLD -> CONFIRM) using FastAPI, PostgreSQL, Redis and Celery.
+---
 
-Quick start (development):
+## Tech Stack
+- Python 3.10
+- FastAPI
+- PostgreSQL
+- SQLAlchemy
+- Alembic
+- Redis
+- Celery
+- Docker & Docker Compose
+- Pytest
 
-1. Copy `.env.example` to `.env` and edit if needed.
-2. Start services: `docker compose up --build`
-3. Create DB tables using Alembic (inside web container): `alembic upgrade head` (configure sqlalchemy.url in alembic.ini or env vars)
+---
 
-What's included:
-- FastAPI app with basic auth (JWT)
-- Models: User, Event (with available_capacity), Reservation
-- Celery worker and a cleanup task to remove expired HOLDs
+## System Overview
 
-Continuous Integration:
-- GitHub Actions workflow `ci.yml` runs migrations and tests on push/PR.
+Reservation flow consists of two steps:
 
-Next steps:
-- Add migrations
-- Add integration tests
-- Add Postman collection and README usage examples
-- Harden auth & add admin-only checks for event creation
+1. **HOLD**
+   - Temporarily reserves capacity for 5 minutes
+   - Stored with status = HOLD
+   - Capacity is decreased temporarily
+
+2. **CONFIRM**
+   - Must be done within 5 minutes
+   - HOLD → CONFIRMED
+   - Capacity becomes permanent
+
+Expired HOLDs are cleaned automatically by a **Celery background worker**.
+
+---
+
+## Architecture
+
+- Web API: FastAPI
+- Background Jobs: Celery + Redis
+- Database: PostgreSQL
+- Concurrency control: DB transactions & row locking
+- CI: GitHub Actions (migration + tests)
+
+---
+
+## Environment Variables
+
+```env
+DATABASE_URL=postgresql+psyc_
