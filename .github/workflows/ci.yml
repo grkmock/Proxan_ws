@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:15
@@ -20,24 +21,29 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U proxan"
-          --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
       redis:
         image: redis:7
         ports:
           - 6379:6379
+
     env:
       DATABASE_URL: postgresql+psycopg2://proxan:proxan@127.0.0.1:5432/proxan
       REDIS_URL: redis://127.0.0.1:6379/0
       SECRET_KEY: test-secret
-      PYTHONPATH: ./app
+      PYTHONPATH: .
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
@@ -47,23 +53,26 @@ jobs:
       - name: Wait for Postgres
         run: |
           python - << 'PY'
-          import time, sys
-          import psycopg2
-          for i in range(30):
+          import time, psycopg2
+          for _ in range(30):
               try:
-                  conn = psycopg2.connect("dbname=proxan user=proxan password=proxan host=127.0.0.1 port=5432")
-                  conn.close()
+                  psycopg2.connect(
+                      dbname="proxan",
+                      user="proxan",
+                      password="proxan",
+                      host="127.0.0.1",
+                      port=5432,
+                  ).close()
                   print("Postgres ready")
                   break
               except Exception:
                   time.sleep(1)
           else:
-              print("Postgres not ready")
-              sys.exit(1)
+              raise RuntimeError("Postgres not ready")
           PY
 
       - name: Run migrations
-        run: alembic upgrade head
+        run: python -m alembic upgrade head
 
       - name: Run tests
         run: pytest -q
