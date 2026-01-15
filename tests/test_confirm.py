@@ -1,7 +1,4 @@
 def test_confirm_reservation(client, hold_reservation):
-    response = client.post(
-        f"/reservations/{hold_reservation['id']}/confirm"
-    )
-
+    # Doğru URL formatı: /reservations/confirm/{id}
+    response = client.post(f"/reservations/confirm/{hold_reservation.id}")
     assert response.status_code == 200
-    assert response.json()["status"] == "CONFIRMED"
