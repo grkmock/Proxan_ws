@@ -16,13 +16,15 @@ pydantic==1.10.12
 # Async / Background
 celery[redis]==5.3.1
 redis==4.6.0
+apscheduler==3.10.1
 
 # Utils
 python-dotenv==1.0.0
 python-multipart==0.0.6
 PyPDF2==3.0.1
 
-# Testing (KRİTİK)
+# Testing
 pytest==7.4.4
 pytest-asyncio==0.21.1
 httpx==0.24.1
+anyio==4.0.0
