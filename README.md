@@ -128,3 +128,13 @@ Uygulama ayağa kalktığında tüm uç noktalara ve şema detaylarına **Swagge
 ---
 
 > **İpucu:** Rezervasyon uç noktaları JWT Token gerektirir. Swagger arayüzündeki **"Authorize"** butonu üzerinden token ekleyerek test yapabilirsiniz.
+
+## 🧪 API Testleri (Postman)
+Proje kök dizininde bulunan `Proxan_API_Collection.json` dosyasını Postman'e import ederek tüm endpoint'leri test edebilirsiniz.
+
+**Kullanım Adımları:**
+1. Postman > Import > Dosyayı seçin.
+2. `Variables` sekmesinden `baseUrl` değerini `http://127.0.0.1:8000` olarak güncelleyin.
+3. `/auth/register` ile kullanıcı oluşturun.
+4. `/auth/token` ile login olup `access_token` değerini alın.
+5. Diğer isteklerde (Hold/Confirm) `Authorization` sekmesine gelip `Bearer Token` olarak bu anahtarı yapıştırın.
