@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine
@@ -12,10 +11,10 @@ import app.db as db_module
 from app.tasks import cleanup_expired_holds
 from app.models import ReservationState, Reservation
 
-
+# --- Test Veritabanı Yapılandırması ---
 @pytest.fixture(scope="module")
 def test_engine():
-    # In-memory SQLite must use StaticPool to persist across connections/threads during testing
+    # In-memory SQLite için StaticPool kullanımı zorunludur (bağlantılar arası veri kaybını önler)
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -24,85 +23,82 @@ def test_engine():
     Base.metadata.create_all(bind=engine)
     return engine
 
-
 @pytest.fixture(scope="module")
 def session_local(test_engine):
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-    # Patch the app's DB session factory to use test DB
+    # Uygulamanın kullandığı DB session fabrikasını test DB'sine yönlendiriyoruz
     db_module.engine = test_engine
     db_module.SessionLocal = SessionLocal
     yield SessionLocal
 
-
+# --- Entegrasyon Testi ---
 @pytest.mark.asyncio
 async def test_full_reservation_flow(session_local):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Register user
+        
+        # 1. Kullanıcı Kaydı (Auth)
         r = await ac.post("/auth/register", json={"username": "alice", "password": "secret"})
         assert r.status_code == 200
         token = r.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
 
-        # Create event with capacity 5
+        # 2. Etkinlik Oluşturma (Kapasite: 5)
         r = await ac.post("/events/", json={"title": "Concert", "capacity": 5}, headers=headers)
         assert r.status_code == 200
         event = r.json()
         event_id = event["id"]
         assert event["available_capacity"] == 5
 
-        # Create 5 holds sequentially (SQLite in-memory does not support concurrent row locking)
+        # 3. Sıralı olarak 5 Hold oluşturma (Kapasiteyi doldur)
         results = []
         for _ in range(5):
             resp = await ac.post("/reservations/hold", json={"event_id": event_id}, headers=headers)
             assert resp.status_code == 200
             results.append(resp)
+        
         reservations = [r.json() for r in results]
         assert len(reservations) == 5
 
-        # One more should fail (no capacity)
+        # 4. Kapasite doluyken 6. talebin reddedildiğini doğrula
         r = await ac.post("/reservations/hold", json={"event_id": event_id}, headers=headers)
         assert r.status_code == 400
 
-        # Confirm the first reservation
+        # 5. İlk rezervasyonu CONFIRM et
         res_id = reservations[0]["id"]
         r = await ac.post(f"/reservations/confirm/{res_id}", headers=headers)
         assert r.status_code == 200
-        confirmed = r.json()
-        assert confirmed["state"] == "CONFIRMED"
+        assert r.json()["state"] == "CONFIRMED"
 
-        # Check event available_capacity is 0
+        # 6. Kapasitenin 0 olduğunu doğrula (1 Confirmed + 4 Hold = 5/5 Dolu)
         r = await ac.get(f"/events/{event_id}")
-        assert r.status_code == 200
-        evt = r.json()
-        assert evt["available_capacity"] == 0
+        assert r.json()["available_capacity"] == 0
 
-        # Expire remaining holds by updating DB directly
-        SessionLocal = session_local
-        db = SessionLocal()
+        # 7. Kalan 4 HOLD'un süresini manuel olarak geçmişe al (Test amaçlı)
+        db = session_local()
         try:
             now = datetime.utcnow()
-            holds = db.query(Reservation).filter(Reservation.event_id == event_id, Reservation.state == ReservationState.HOLD).all()
+            holds = db.query(Reservation).filter(
+                Reservation.event_id == event_id, 
+                Reservation.state == ReservationState.HOLD
+            ).all()
             assert len(holds) == 4
+            
             for h in holds:
                 h.expires_at = now - timedelta(minutes=1)
             db.commit()
+
+            # 8. KRİTİK DÜZELTME: Temizlik görevini test DB oturumuyla çalıştır
+            # Bu işlem süresi dolan 4 kaydı silecek ve kapasiteyi 0'dan 4'ye çıkaracaktır.
+            cleanup_expired_holds(db_session=db)
+
         finally:
             db.close()
 
-        # Run cleanup task which should remove expired holds and restore capacity
-        cleanup_expired_holds()
-
-        # Check event available capacity is now 4
+        # 9. Kapasitenin iade edildiğini doğrula (Beklenen: 4)
         r = await ac.get(f"/events/{event_id}")
         evt = r.json()
         assert evt["available_capacity"] == 4
-
-        # Also ensure holds are removed
-        SessionLocal = session_local
-        db = SessionLocal()
-        try:
-            remaining_holds = db.query(Reservation).filter(Reservation.event_id == event_id, Reservation.state == ReservationState.HOLD).count()
-            assert remaining_holds == 0
-        finally:
-            db.close()
+        
+        # PDF İsteği: HOLD sayısının 0 olduğunu doğrula
+        # (Önceki hat

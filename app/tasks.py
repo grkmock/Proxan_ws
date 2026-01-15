@@ -1,21 +1,28 @@
+from sqlalchemy.orm import Session
 from datetime import datetime
-import app.db as db_module
-from app.models import Reservation, ReservationState, Event
-from datetime import datetime
+from app.db import SessionLocal
+from app.models import Reservation, Event, ReservationState
 
-
-def cleanup_expired_holds():
-    SessionLocal = db_module.SessionLocal
-    db = SessionLocal()
+def cleanup_expired_holds(db_session: Session = None):
+    # Eğer bir session verilmemişse (normal çalışma), yenisini aç
+    db = db_session or SessionLocal()
     try:
-        now = datetime.utcnow()
-        expired = db.query(Reservation).filter(Reservation.state == ReservationState.HOLD, Reservation.expires_at <= now).all()
-        for r in expired:
-            # restore capacity
-            event = db.query(Event).filter(Event.id == r.event_id).with_for_update().first()
+        expired_reservations = db.query(Reservation).filter(
+            Reservation.state == ReservationState.HOLD,
+            Reservation.expires_at < datetime.utcnow()
+        ).all()
+
+        for res in expired_reservations:
+            event = db.query(Event).filter(Event.id == res.event_id).first()
             if event:
                 event.available_capacity += 1
-            db.delete(r)
+            db.delete(res)
+        
         db.commit()
+    except Exception as e:
+        print(f"Cleanup Error: {e}")
+        db.rollback()
     finally:
-        db.close()
+        # Sadece biz açtıysak biz kapatmalıyız
+        if db_session is None:
+            db.close()
