@@ -1,4 +1,6 @@
 import pytest
+import sys
+import os
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from fastapi.testclient import TestClient
@@ -6,7 +8,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
 
-# Uygulama ve Model importları
+# Proje kök dizinini Python yoluna ekleyerek 'app' modülünün her ortamda bulunmasını sağlar
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from app.models import Base, Event, Reservation, ReservationState
 from app.main import app
 from app.db import get_db
@@ -18,7 +22,6 @@ except ImportError:
     get_current_user = None
 
 # --- SQLite In-Memory Konfigürasyonu ---
-# Testlerin izole ve hızlı olması için bellekte (RAM) çalışan SQLite kullanıyoruz.
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
@@ -27,13 +30,18 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# --- Async Test Desteği ---
+@pytest.fixture(scope="session")
+def anyio_backend():
+    return "asyncio"
+
 @pytest.fixture(scope="function")
 def db():
-    """Her test için temiz bir veritabanı ve başlangıç verisi oluşturur."""
+    """Her test için izole, temiz bir veritabanı ve başlangıç verisi oluşturur."""
     Base.metadata.create_all(bind=engine)
     session = TestingSessionLocal()
     
-    # Testler için zorunlu olan Event (ID: 1) verisi
+    # Testlerin genelinde kullanılan varsayılan Etkinlik (ID: 1)
     if not session.query(Event).filter(Event.id == 1).first():
         test_event = Event(
             id=1,
@@ -55,29 +63,25 @@ def db():
 
 @pytest.fixture(scope="function")
 def client(db):
-    """FastAPI bağımlılıklarını (DB ve Auth) test nesneleriyle değiştirir."""
-    # Veritabanı bağlantısını override et
+    """FastAPI bağımlılıklarını test nesneleriyle (DB ve Mock Auth) değiştirir."""
     app.dependency_overrides[get_db] = lambda: db
     
-    # Kullanıcı kimlik doğrulamasını bypass et (SimpleNamespace ile)
     if get_current_user:
+        # AttributeError'u engelleyen ve current_user.id'ye erişim sağlayan yapı
         mock_user = SimpleNamespace(id=1, username="testuser")
         app.dependency_overrides[get_current_user] = lambda: mock_user
     
     with TestClient(app) as c:
         yield c
     
-    # Test bittiğinde override'ları temizle
     app.dependency_overrides.clear()
 
 @pytest.fixture
 def hold_reservation(db):
-    """Onaylama testleri için geçerli bir 'HOLD' durumunda rezervasyon."""
+    """Onaylama testleri için 'HOLD' durumunda hazır rezervasyon."""
     res = Reservation(
-        id=1,
-        event_id=1,
-        user_id=1,
-        state=ReservationState.HOLD,
+        id=1, event_id=1, user_id=1, 
+        state=ReservationState.HOLD, 
         expires_at=datetime.utcnow() + timedelta(minutes=10)
     )
     db.add(res)
@@ -87,12 +91,10 @@ def hold_reservation(db):
 
 @pytest.fixture
 def expired_hold(db):
-    """Süre kontrolü testi için geçmiş tarihli bir rezervasyon."""
+    """Süre aşımı senaryoları için süresi dolmuş rezervasyon."""
     res = Reservation(
-        id=2,
-        event_id=1,
-        user_id=1,
-        state=ReservationState.HOLD,
+        id=2, event_id=1, user_id=1, 
+        state=ReservationState.HOLD, 
         expires_at=datetime.utcnow() - timedelta(minutes=10)
     )
     db.add(res)
